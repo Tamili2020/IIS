@@ -13,13 +13,13 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Prepare site.zip (no nesting)
+    - name: Prepare flat zip (no folder nesting)
       run: |
-        mkdir staging
+        mkdir package
         shopt -s extglob
-        cp -r !(staging) staging/
-        cd staging
-        zip -r ../site.zip .
+        cp -r !(package) package/
+        cd package
+        zip -r ../site.zip * .[^.] .??*
         cd ..
 
     - name: Upload site.zip to Azure VM
@@ -32,7 +32,7 @@ jobs:
         source: "site.zip"
         target: "C:\\temp\\deploy\\site.zip"
 
-    - name: Extract and deploy to IIS
+    - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -41,24 +41,23 @@ jobs:
         port: 22
         script: |
           powershell -NoProfile -Command "
-            Write-Host '📦 Extracting site.zip...';
+            Write-Host '📦 Extracting ZIP...';
+            if (Test-Path 'C:\temp\deploy\unzipped') {
+              Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped'
+            }
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
 
-            Write-Host '📁 Listing extracted files:';
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
-              Write-Host $_.FullName
-            }
-
-            Write-Host '🧹 Clearing wwwroot...';
+            Write-Host '🧹 Cleaning wwwroot...';
             Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
 
             Write-Host '📤 Copying files to wwwroot...';
             Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
 
-            Write-Host '📁 Listing final wwwroot contents:';
+            Write-Host '📁 Listing wwwroot:';
             Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse | ForEach-Object {
               Write-Host $_.FullName
             }
 
+            Write-Host '🔁 Restarting IIS...';
             iisreset
           "
