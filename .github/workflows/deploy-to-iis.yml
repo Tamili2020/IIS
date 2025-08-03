@@ -13,17 +13,21 @@ jobs:
     - name: 📥 Checkout source code
       uses: actions/checkout@v3
 
-    - name: 📤 Upload site files to Azure VM via SCP
+    - name: 📦 Zip files before transfer
+      run: |
+        zip -r deploy.zip . -x ".git/*"
+
+    - name: 📤 Upload ZIP to Azure VM
       uses: appleboy/scp-action@v0.1.5
       with:
         host: ${{ secrets.VM_IP }}
         username: ${{ secrets.VM_USER }}
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
-        source: "."
-        target: "C:/temp/deploy"
+        source: "deploy.zip"
+        target: "C:/temp/deploy.zip"
 
-    - name: 🚀 Deploy files to IIS via SSH
+    - name: 🚀 Deploy to IIS via SSH
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -32,6 +36,7 @@ jobs:
         port: 22
         script: |
           powershell -Command "
+            Expand-Archive -Path 'C:\temp\deploy.zip' -DestinationPath 'C:\temp\deploy' -Force;
             Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
             Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
