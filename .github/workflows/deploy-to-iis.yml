@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
+    - name: 📥 Checkout source code
       uses: actions/checkout@v3
 
-    - name: Upload site files to Azure VM
+    - name: 📤 Upload site files to Azure VM via SCP
       uses: appleboy/scp-action@v0.1.5
       with:
         host: ${{ secrets.VM_IP }}
@@ -23,7 +23,7 @@ jobs:
         source: "."
         target: "C:/temp/deploy"
 
-    - name: Deploy files to IIS via SSH
+    - name: 🚀 Deploy files to IIS via SSH
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -32,7 +32,7 @@ jobs:
         port: 22
         script: |
           powershell -Command "
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
-            Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse;
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+            Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
           "
