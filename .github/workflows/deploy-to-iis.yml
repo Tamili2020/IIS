@@ -13,14 +13,26 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Copy files to Azure VM via WinRM
-      uses: gsoft-inc/ssh-action@v0.1.0
+    - name: Upload site files to Azure VM
+      uses: appleboy/scp-action@v0.1.5
       with:
-        host: ${{ secrets.AZURE_VM_IP }}
-        username: ${{ secrets.AZURE_VM_USER }}
-        password: ${{ secrets.AZURE_VM_PASSWORD }}
-        port: 5986
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
+        source: "."
+        target: "C:/temp/deploy"
+
+    - name: Deploy files to IIS via SSH
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
         script: |
-          Remove-Item -Path "C:\inetpub\wwwroot\*" -Recurse -Force
-          Copy-Item -Path "$env:GITHUB_WORKSPACE\*" -Destination "C:\inetpub\wwwroot\" -Recurse
-          iisreset
+          powershell -Command "
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
+            Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse;
+            iisreset
+          "
