@@ -45,4 +45,30 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         script: |
-          p
+          powershell -NoProfile -Command "
+            Write-Host '🧼 Cleaning previous files...';
+            Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped' -ErrorAction SilentlyContinue;
+            Remove-Item -Recurse -Force 'C:\inetpub\wwwroot\*' -ErrorAction SilentlyContinue;
+
+            Write-Host '📦 Extracting ZIP...';
+            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
+
+            Write-Host '📤 Copying files to wwwroot...';
+            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
+              if (-not $_.PSIsContainer) {
+                $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length).TrimStart('\')
+                $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
+                $destDir = Split-Path $destination
+                if (!(Test-Path $destDir)) {
+                  New-Item -Path $destDir -ItemType Directory -Force | Out-Null
+                }
+                Copy-Item -Path $_.FullName -Destination $destination -Force
+              }
+            }
+
+            Write-Host '🗂 Final wwwroot content:';
+            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
+
+            Write-Host '🔁 Restarting IIS...';
+            iisreset
+          "
