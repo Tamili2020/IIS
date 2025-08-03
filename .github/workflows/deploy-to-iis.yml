@@ -4,59 +4,364 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Skip backup creation'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DEPLOY_PATH: C:\inetpub\wwwroot
+  TEMP_PATH: C:\temp\deploy
+  BACKUP_PATH: C:\temp\backup
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
     - name: Checkout source
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Prepare flat zip (no folder nesting)
+    - name: Prepare deployment package
       run: |
-        mkdir flat
-        find . -maxdepth 1 -type f -exec cp {} flat/ \;
-        find . -maxdepth 1 -type d ! -name ".git" ! -name "flat" ! -name "." -exec cp -r {} flat/ \;
-        cd flat
-        zip -r ../site.zip .
+        echo "🏗️ Creating deployment package..."
+        
+        # Create package directory
+        mkdir -p package
+        
+        # Copy all files except specific exclusions
+        shopt -s extglob dotglob
+        
+        # Define exclusion patterns
+        exclude_patterns=(
+          ".git*"
+          ".github*" 
+          "node_modules*"
+          "*.log"
+          "*.tmp"
+          ".env*"
+          "package*"
+          "README.md"
+          "*.md"
+          ".vscode*"
+          ".idea*"
+          "*.zip"
+        )
+        
+        # Copy files while excluding patterns
+        for item in *; do
+          should_exclude=false
+          for pattern in "${exclude_patterns[@]}"; do
+            if [[ "$item" == $pattern ]]; then
+              should_exclude=true
+              break
+            fi
+          done
+          
+          if [ "$should_exclude" = false ] && [ "$item" != "package" ]; then
+            echo "📁 Including: $item"
+            cp -r "$item" package/
+          else
+            echo "🚫 Excluding: $item"
+          fi
+        done
+        
+        # Create version info
+        echo "$(date '+%Y-%m-%d %H:%M:%S UTC') - Commit: ${GITHUB_SHA:0:8}" > package/deployment-info.txt
+        echo "Branch: $GITHUB_REF_NAME" >> package/deployment-info.txt
+        echo "Workflow: $GITHUB_RUN_NUMBER" >> package/deployment-info.txt
+        
+        # Create flat zip from package contents
+        cd package
+        echo "📦 Creating deployment zip..."
+        zip -r ../site.zip . -x "*.DS_Store" "Thumbs.db"
         cd ..
-        unzip -l site.zip  # ✅ List contents for debug
+        
+        # Verify zip contents
+        echo "📋 Zip contents:"
+        unzip -l site.zip | head -20
 
-    - name: Upload site.zip to Azure VM
-      uses: appleboy/scp-action@v0.1.5
+    - name: Validate deployment package
+      run: |
+        echo "✅ Validating package..."
+        
+        # Check if zip file exists and has content
+        if [ ! -f "site.zip" ]; then
+          echo "❌ Deployment package not found!"
+          exit 1
+        fi
+        
+        file_size=$(stat -c%s "site.zip")
+        if [ $file_size -lt 100 ]; then
+          echo "❌ Deployment package is too small ($file_size bytes)"
+          exit 1
+        fi
+        
+        echo "✅ Package validation passed (Size: $file_size bytes)"
+
+    - name: Upload deployment package to Azure VM
+      uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.VM_IP }}
         username: ${{ secrets.VM_USER }}
         password: ${{ secrets.VM_PASSWORD }}
-        port: 22
+        port: ${{ secrets.VM_SSH_PORT || 22 }}
         source: "site.zip"
-        target: "C:\\temp\\deploy\\site.zip"
+        target: "${{ env.TEMP_PATH }}"
+        timeout: 300s
+        command_timeout: 60s
 
-    - name: Extract and deploy on IIS
-      uses: appleboy/ssh-action@v0.1.10
+    - name: Deploy to IIS with rollback capability
+      uses: appleboy/ssh-action@v0.1.11
       with:
         host: ${{ secrets.VM_IP }}
         username: ${{ secrets.VM_USER }}
         password: ${{ secrets.VM_PASSWORD }}
-        port: 22
+        port: ${{ secrets.VM_SSH_PORT || 22 }}
+        timeout: 300s
+        command_timeout: 300s
+        script: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "
+            `$ErrorActionPreference = 'Stop'
+            `$ProgressPreference = 'SilentlyContinue'
+            
+            # Variables
+            `$deployPath = '${{ env.DEPLOY_PATH }}'
+            `$tempPath = '${{ env.TEMP_PATH }}'
+            `$backupPath = '${{ env.BACKUP_PATH }}'
+            `$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            `$backupName = \"backup-`$timestamp\"
+            `$skipBackup = '${{ github.event.inputs.skip_backup }}' -eq 'true'
+            
+            try {
+              Write-Host '🚀 Starting deployment process...'
+              Write-Host \"Timestamp: `$timestamp\"
+              Write-Host \"Skip Backup: `$skipBackup\"
+              
+              # Ensure directories exist
+              @(`$tempPath, `$backupPath) | ForEach-Object {
+                if (-not (Test-Path `$_)) {
+                  New-Item -ItemType Directory -Path `$_ -Force | Out-Null
+                  Write-Host \"📁 Created directory: `$_\"
+                }
+              }
+              
+              # Create backup of current deployment
+              if (-not `$skipBackup -and (Test-Path `$deployPath) -and (Get-ChildItem `$deployPath -ErrorAction SilentlyContinue)) {
+                Write-Host '💾 Creating backup...'
+                `$backupFullPath = Join-Path `$backupPath `$backupName
+                Copy-Item -Path `$deployPath -Destination `$backupFullPath -Recurse -Force
+                Write-Host \"✅ Backup created: `$backupFullPath\"
+                
+                # Cleanup old backups (keep last 5)
+                Get-ChildItem `$backupPath -Directory | 
+                  Sort-Object CreationTime -Descending | 
+                  Select-Object -Skip 5 | 
+                  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host '🧹 Old backups cleaned up'
+              } else {
+                Write-Host '⏭️ Skipping backup creation'
+              }
+              
+              # Stop IIS Application Pool (optional - uncomment if needed)
+              # Import-Module WebAdministration -ErrorAction SilentlyContinue
+              # if (Get-Module WebAdministration) {
+              #   Write-Host '⏸️ Stopping application pool...'
+              #   Stop-WebAppPool -Name 'DefaultAppPool' -ErrorAction SilentlyContinue
+              # }
+              
+              # Extract deployment package
+              Write-Host '📦 Extracting deployment package...'
+              `$unzipPath = Join-Path `$tempPath 'unzipped'
+              if (Test-Path `$unzipPath) {
+                Remove-Item -Path `$unzipPath -Recurse -Force
+              }
+              
+              `$zipPath = Join-Path `$tempPath 'site.zip'
+              if (-not (Test-Path `$zipPath)) {
+                throw 'Deployment package not found at expected location'
+              }
+              
+              Expand-Archive -Path `$zipPath -DestinationPath `$unzipPath -Force
+              Write-Host '✅ Package extracted successfully'
+              
+              # Verify extracted content
+              `$extractedFiles = Get-ChildItem `$unzipPath -Recurse
+              if (`$extractedFiles.Count -eq 0) {
+                throw 'No files found in deployment package'
+              }
+              Write-Host \"📊 Extracted `$(`$extractedFiles.Count) files\"
+              
+              # Clear existing deployment
+              Write-Host '🧹 Clearing existing deployment...'
+              if (Test-Path `$deployPath) {
+                Get-ChildItem `$deployPath | Remove-Item -Recurse -Force -ErrorAction Continue
+              }
+              Write-Host '✅ Existing deployment cleared'
+              
+              # Deploy new files
+              Write-Host '📤 Deploying new files...'
+              Copy-Item -Path \"`$unzipPath\*\" -Destination `$deployPath -Recurse -Force
+              
+              # Set proper permissions for IIS
+              Write-Host '🔐 Setting IIS permissions...'
+              icacls `$deployPath /grant 'IIS_IUSRS:(OI)(CI)RX' /T /Q
+              icacls `$deployPath /grant 'IUSR:(OI)(CI)RX' /T /Q
+              
+              # Start IIS Application Pool (if stopped earlier)
+              # if (Get-Module WebAdministration) {
+              #   Write-Host '▶️ Starting application pool...'
+              #   Start-WebAppPool -Name 'DefaultAppPool' -ErrorAction SilentlyContinue
+              # }
+              
+              # Reset IIS
+              Write-Host '🔁 Restarting IIS...'
+              iisreset /noforce
+              
+              # Verify deployment
+              Write-Host '🔍 Verifying deployment...'
+              `$deployedFiles = Get-ChildItem `$deployPath -Recurse
+              Write-Host \"✅ Deployment verified: `$(`$deployedFiles.Count) files deployed\"
+              
+              # Show deployment info if available
+              `$infoFile = Join-Path `$deployPath 'deployment-info.txt'
+              if (Test-Path `$infoFile) {
+                Write-Host '📋 Deployment Information:'
+                Get-Content `$infoFile | ForEach-Object { Write-Host \"   `$_\" }
+              }
+              
+              # List deployed files (first 20)
+              Write-Host '📁 Deployed files (showing first 20):'
+              `$deployedFiles | Select-Object -First 20 | ForEach-Object {
+                `$relativePath = `$_.FullName.Replace(`$deployPath, '').TrimStart('\')
+                Write-Host \"   `$relativePath\"
+              }
+              
+              if (`$deployedFiles.Count -gt 20) {
+                Write-Host \"   ... and `$(`$deployedFiles.Count - 20) more files\"
+              }
+              
+              Write-Host '🎉 Deployment completed successfully!'
+              
+            } catch {
+              Write-Host \"❌ Deployment failed: `$(`$_.Exception.Message)\" -ForegroundColor Red
+              
+              # Attempt rollback if backup exists
+              `$backupFullPath = Join-Path `$backupPath `$backupName
+              if (-not `$skipBackup -and (Test-Path `$backupFullPath)) {
+                Write-Host '🔄 Attempting rollback...' -ForegroundColor Yellow
+                try {
+                  Remove-Item -Path \"`$deployPath\*\" -Recurse -Force -ErrorAction Continue
+                  Copy-Item -Path \"`$backupFullPath\*\" -Destination `$deployPath -Recurse -Force
+                  
+                  # if (Get-Module WebAdministration) {
+                  #   Start-WebAppPool -Name 'DefaultAppPool' -ErrorAction SilentlyContinue
+                  # }
+                  iisreset /noforce
+                  
+                  Write-Host '✅ Rollback completed successfully' -ForegroundColor Green
+                } catch {
+                  Write-Host \"❌ Rollback also failed: `$(`$_.Exception.Message)\" -ForegroundColor Red
+                }
+              } else {
+                Write-Host '⚠️ No backup available for rollback' -ForegroundColor Yellow
+              }
+              
+              throw `$_
+            } finally {
+              # Cleanup temporary files
+              Write-Host '🧹 Cleaning up temporary files...'
+              Remove-Item -Path `$zipPath -Force -ErrorAction SilentlyContinue
+              Remove-Item -Path `$unzipPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          "
+
+    - name: Health check
+      if: success()
+      uses: appleboy/ssh-action@v0.1.11
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: ${{ secrets.VM_SSH_PORT || 22 }}
+        timeout: 60s
         script: |
           powershell -NoProfile -Command "
-            Write-Host '📦 Extracting ZIP...';
-            if (Test-Path 'C:\temp\deploy\unzipped') {
-              Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped'
+            Write-Host '🏥 Performing health check...'
+            
+            # Check if IIS is running
+            `$iisStatus = Get-Service W3SVC -ErrorAction SilentlyContinue
+            if (`$iisStatus -and `$iisStatus.Status -eq 'Running') {
+              Write-Host '✅ IIS service is running'
+            } else {
+              Write-Host '❌ IIS service is not running' -ForegroundColor Red
+              exit 1
             }
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
+            
+            # Check if deployment path exists and has files
+            if (Test-Path '${{ env.DEPLOY_PATH }}') {
+              `$fileCount = (Get-ChildItem '${{ env.DEPLOY_PATH }}' -Recurse).Count
+              if (`$fileCount -gt 0) {
+                Write-Host \"✅ Deployment directory contains `$fileCount files\"
+              } else {
+                Write-Host '❌ Deployment directory is empty' -ForegroundColor Red
+                exit 1
+              }
+            } else {
+              Write-Host '❌ Deployment directory does not exist' -ForegroundColor Red
+              exit 1
+            }
+            
+            Write-Host '🎉 Health check passed!'
+          "
 
-            Write-Host '🧹 Cleaning wwwroot...';
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+    - name: Cleanup on failure
+      if: failure()
+      uses: appleboy/ssh-action@v0.1.11
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: ${{ secrets.VM_SSH_PORT || 22 }}
+        script: |
+          powershell -NoProfile -Command "
+            Write-Host '🧹 Cleaning up after failed deployment...'
+            Remove-Item -Path '${{ env.TEMP_PATH }}\site.zip' -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path '${{ env.TEMP_PATH }}\unzipped' -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host '✅ Cleanup completed'
+          "
 
-            Write-Host '📤 Copying files to wwwroot...';
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
-
-            Write-Host '📁 Listing wwwroot:';
-            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse
-
-            Write-Host '🔁 Restarting IIS...';
-            iisreset
+    - name: Post-deployment summary
+      if: always()
+      uses: appleboy/ssh-action@v0.1.11
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: ${{ secrets.VM_SSH_PORT || 22 }}
+        script: |
+          powershell -NoProfile -Command "
+            Write-Host '📊 Deployment Summary:'
+            Write-Host \"Server: $env:COMPUTERNAME\"
+            Write-Host \"Date: $(Get-Date)\"
+            Write-Host \"User: $env:USERNAME\"
+            
+            if (Test-Path '${{ env.DEPLOY_PATH }}\deployment-info.txt') {
+              Write-Host '📋 Latest Deployment Info:'
+              Get-Content '${{ env.DEPLOY_PATH }}\deployment-info.txt' | ForEach-Object { Write-Host \"   `$_\" }
+            }
+            
+            # Show available backups
+            if (Test-Path '${{ env.BACKUP_PATH }}') {
+              `$backups = Get-ChildItem '${{ env.BACKUP_PATH }}' -Directory | Sort-Object CreationTime -Descending
+              if (`$backups) {
+                Write-Host '💾 Available Backups:'
+                `$backups | Select-Object -First 5 | ForEach-Object {
+                  Write-Host \"   `$(`$_.Name) - `$(`$_.CreationTime)\"
+                }
+              }
+            }
           "
