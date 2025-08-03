@@ -37,7 +37,7 @@ jobs:
         source: "site.zip"
         target: "C:\\temp\\deploy"
 
-        - name: 🛠 Extract and deploy to IIS
+    - name: 🛠 Extract and deploy to IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
