@@ -17,11 +17,15 @@ jobs:
       run: |
         mkdir deploy_content
         shopt -s dotglob
-        cp -r ./* deploy_content/
+        for f in *; do
+          if [[ "$f" != "deploy_content" ]]; then
+            cp -r "$f" deploy_content/
+          fi
+        done
         cd deploy_content
         zip -r ../site.zip .
         cd ..
-        unzip -l site.zip  # ✅ Confirm index.html exists in zip root
+        unzip -l site.zip  # ✅ Debug: list contents of the zip
 
     - name: Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
@@ -48,9 +52,6 @@ jobs:
 
             Write-Host '📦 Extracting ZIP...';
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
-
-            Write-Host '📁 Verifying contents...';
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse;
 
             Write-Host '📤 Copying to wwwroot...';
             Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
