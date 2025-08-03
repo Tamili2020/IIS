@@ -15,12 +15,13 @@ jobs:
 
     - name: Prepare flat zip (no folder nesting)
       run: |
-        mkdir package
-        shopt -s extglob
-        cp -r !(package) package/
-        cd package
-        zip -r ../site.zip * .[^.] .??*
+        mkdir flat
+        find . -maxdepth 1 -type f -exec cp {} flat/ \;
+        find . -maxdepth 1 -type d ! -name ".git" ! -name "flat" ! -name "." -exec cp -r {} flat/ \;
+        cd flat
+        zip -r ../site.zip .
         cd ..
+        unzip -l site.zip  # ✅ List contents for debug
 
     - name: Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
@@ -54,9 +55,7 @@ jobs:
             Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
 
             Write-Host '📁 Listing wwwroot:';
-            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse | ForEach-Object {
-              Write-Host $_.FullName
-            }
+            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse
 
             Write-Host '🔁 Restarting IIS...';
             iisreset
