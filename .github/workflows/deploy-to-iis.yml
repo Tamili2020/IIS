@@ -13,36 +13,20 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Create ZIP of website
-      run: |
-        zip -r site.zip .
+    - name: Zip the website content
+      run: zip -r site.zip .
 
-    - name: Upload site ZIP via SSH
-      uses: appleboy/ssh-action@v0.1.10
+    - name: Upload site.zip to Azure VM
+      uses: appleboy/scp-action@v0.1.5
       with:
         host: ${{ secrets.VM_IP }}
         username: ${{ secrets.VM_USER }}
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
-        script: |
-          mkdir C:\temp\deploy
-          exit
+        source: "site.zip"
+        target: "C:\\temp\\deploy\\site.zip"  # Windows-style path
 
-    - name: Transfer ZIP manually
-      uses: appleboy/ssh-action@v0.1.10
-      with:
-        host: ${{ secrets.VM_IP }}
-        username: ${{ secrets.VM_USER }}
-        password: ${{ secrets.VM_PASSWORD }}
-        port: 22
-        script_stop: true
-        script: |
-          echo "Uploading zip..."
-        envs: GITHUB_WORKSPACE
-        pre: |
-          scp -P 22 site.zip ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/C:/temp/deploy/site.zip
-
-    - name: Unzip and deploy to IIS
+    - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
