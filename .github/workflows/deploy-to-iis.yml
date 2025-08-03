@@ -37,7 +37,7 @@ jobs:
         source: "site.zip"
         target: "C:\\temp\\deploy"
 
-    - name: 🛠 Extract and deploy to IIS
+        - name: 🛠 Extract and deploy to IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -53,11 +53,19 @@ jobs:
             Write-Host '📦 Extracting ZIP...';
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
 
-            Write-Host '✅ Verifying extracted content:';
+            Write-Host '📂 Listing extracted files...';
             Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse;
 
             Write-Host '📤 Copying files to wwwroot...';
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
+            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse -File | ForEach-Object {
+              $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length).TrimStart('\');
+              $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
+              $destinationDir = Split-Path $destination
+              if (!(Test-Path $destinationDir)) {
+                New-Item -Path $destinationDir -ItemType Directory -Force | Out-Null
+              }
+              Copy-Item -Path $_.FullName -Destination $destination -Force
+            }
 
             Write-Host '🗂 Final wwwroot content:';
             Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
