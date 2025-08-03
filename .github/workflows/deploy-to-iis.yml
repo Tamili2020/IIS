@@ -24,7 +24,7 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         source: "site.zip"
-        target: "C:\\temp\\deploy\\site.zip"  # Correct indentation here
+        target: "C:\\temp\\deploy\\site.zip"
 
     - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
@@ -36,12 +36,7 @@ jobs:
         script: |
           powershell -Command "
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
-              if (-not $_.PSIsContainer) {
-                $dest = Join-Path 'C:\inetpub\wwwroot' $_.Name;
-                Copy-Item -Path $_.FullName -Destination $dest -Force;
-              }
-            };
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
           "
