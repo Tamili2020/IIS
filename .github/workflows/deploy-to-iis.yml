@@ -1,0 +1,26 @@
+name: Deploy to IIS on Azure VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v3
+
+    - name: Copy files to Azure VM via WinRM
+      uses: gsoft-inc/ssh-action@v0.1.0
+      with:
+        host: ${{ secrets.AZURE_VM_IP }}
+        username: ${{ secrets.AZURE_VM_USER }}
+        password: ${{ secrets.AZURE_VM_PASSWORD }}
+        port: 5986
+        script: |
+          Remove-Item -Path "C:\inetpub\wwwroot\*" -Recurse -Force
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\*" -Destination "C:\inetpub\wwwroot\" -Recurse
+          iisreset
