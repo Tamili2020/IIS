@@ -13,19 +13,19 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Prepare clean zip (no nested folders)
+    - name: Prepare clean zip without nesting
       run: |
         mkdir deploy_content
-        shopt -s dotglob
-        for f in *; do
-          if [[ "$f" != "deploy_content" && "$f" != ".git" && "$f" != "site.zip" ]]; then
-            cp -r "$f" deploy_content/
+        shopt -s dotglob  # Include hidden files
+        for item in *; do
+          if [[ "$item" != "deploy_content" && "$item" != ".git" ]]; then
+            cp -r "$item" deploy_content/
           fi
         done
         cd deploy_content
-        zip -r ../site.zip .
+        zip -r ../site.zip ./*
         cd ..
-        unzip -l site.zip  # ✅ Debug: list contents of the zip
+        unzip -l site.zip  # ✅ Show zip content for debugging
 
     - name: Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
@@ -54,17 +54,7 @@ jobs:
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
 
             Write-Host '📤 Copying files to wwwroot...';
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
-              if (-not $_.PSIsContainer) {
-                $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length).TrimStart('\')
-                $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
-                $destDir = Split-Path $destination
-                if (!(Test-Path $destDir)) {
-                  New-Item -Path $destDir -ItemType Directory -Force | Out-Null
-                }
-                Copy-Item -Path $_.FullName -Destination $destination -Force
-              }
-            }
+            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
 
             Write-Host '🗂 Final wwwroot content:';
             Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
