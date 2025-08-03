@@ -47,7 +47,7 @@ jobs:
         script: |
           powershell -NoProfile -Command "
             $zipPath = 'C:\temp\deploy\site.zip'
-            $extractPath = 'C:\temp\deploy\unzipped'
+            $extractPath = 'C:\temp\deploy'
             $wwwroot = 'C:\inetpub\wwwroot'
 
             Write-Host '🧼 Cleaning old files...'
