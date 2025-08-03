@@ -1,4 +1,4 @@
-  name: Deploy to IIS on Azure VM
+name: Deploy to IIS on Azure VM
 
 on:
   push:
@@ -24,9 +24,9 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         source: "site.zip"
-        target: "C:\\temp\\deploy\\site.zip"  # Windows-style path
+        target: "C:\\temp\\deploy\\site.zip"  # Correct indentation here
 
-        - name: Extract and deploy on IIS
+    - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -45,4 +45,3 @@ jobs:
             };
             iisreset
           "
-
