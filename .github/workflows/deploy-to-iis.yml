@@ -1,4 +1,4 @@
-name: Deploy to IIS on Azure VM
+  name: Deploy to IIS on Azure VM
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
         source: "site.zip"
         target: "C:\\temp\\deploy\\site.zip"  # Windows-style path
 
-    - name: Extract and deploy on IIS
+        - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -35,8 +35,14 @@ jobs:
         port: 22
         script: |
           powershell -Command "
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy' -Force;
+            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
             Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
-            Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
+            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
+              if (-not $_.PSIsContainer) {
+                $dest = Join-Path 'C:\inetpub\wwwroot' $_.Name;
+                Copy-Item -Path $_.FullName -Destination $dest -Force;
+              }
+            };
             iisreset
           "
+
