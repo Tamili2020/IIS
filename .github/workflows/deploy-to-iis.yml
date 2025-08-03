@@ -48,38 +48,5 @@ jobs:
           powershell -NoProfile -Command "
             $zipPath = 'C:\temp\deploy\site.zip'
             $extractPath = 'C:\temp\deploy\unzipped'
-            $wwwroot = 'C:\inetpub\wwwroot'
-
-            Write-Host '🧼 Cleaning old files...'
-            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
-            Remove-Item -Recurse -Force ($wwwroot + '\*') -ErrorAction SilentlyContinue
-
-            Write-Host '📁 Checking ZIP existence...'
-            if (-Not (Test-Path $zipPath)) {
-              Write-Error '❌ ZIP file not found at ' + $zipPath
-              exit 1
-            } else {
-              Write-Host '✅ ZIP file found.'
-            }
-
-            Write-Host '📦 Extracting ZIP...'
-            try {
-              Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-              Write-Host '✅ Extraction completed.'
-            } catch {
-              Write-Error '❌ Expand-Archive failed: ' + $_.Exception.Message
-              exit 1
-            }
-
-            Write-Host '📂 Contents of extracted folder:'
-            Get-ChildItem -Path $extractPath -Recurse
-
-            Write-Host '📤 Copying files to wwwroot...'
-            Copy-Item -Path ($extractPath + '\*') -Destination $wwwroot -Recurse -Force
-
-            Write-Host '🗂 Final wwwroot content:'
-            Get-ChildItem -Path $wwwroot -Recurse
-
-            Write-Host '🔁 Restarting IIS...'
-            iisreset
-          "
+            $wwwroot = 'C:\inetpub\wwwroot'                   
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force"
