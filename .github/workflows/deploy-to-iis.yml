@@ -13,7 +13,11 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Create deploy folder via SSH
+    - name: Create ZIP of website
+      run: |
+        zip -r site.zip .
+
+    - name: Upload site ZIP via SSH
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -21,19 +25,24 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         script: |
-          powershell -Command "New-Item -ItemType Directory -Force -Path 'C:\temp\deploy'"
+          mkdir C:\temp\deploy
+          exit
 
-    - name: Upload files to Azure VM
-      uses: appleboy/scp-action@v0.1.5
+    - name: Transfer ZIP manually
+      uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
         username: ${{ secrets.VM_USER }}
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
-        source: "."
-        target: "/c/temp/deploy"   # 🔁 Use forward slashes (cygwin-style)
+        script_stop: true
+        script: |
+          echo "Uploading zip..."
+        envs: GITHUB_WORKSPACE
+        pre: |
+          scp -P 22 site.zip ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/C:/temp/deploy/site.zip
 
-    - name: Deploy files to IIS
+    - name: Unzip and deploy to IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -42,6 +51,7 @@ jobs:
         port: 22
         script: |
           powershell -Command "
+            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy' -Force;
             Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
             Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
