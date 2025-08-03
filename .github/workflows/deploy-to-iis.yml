@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
+    - name: ✅ Checkout source
       uses: actions/checkout@v3
 
-    - name: Prepare clean zip without nesting
+    - name: 📦 Prepare clean zip (no nested folders)
       run: |
         mkdir deploy_content
         shopt -s dotglob  # Include hidden files
@@ -25,9 +25,10 @@ jobs:
         cd deploy_content
         zip -r ../site.zip ./*
         cd ..
-        unzip -l site.zip  # ✅ Show zip content for debugging
+        echo "✅ ZIP prepared:"
+        unzip -l site.zip  # Debug: list files inside
 
-    - name: Upload site.zip to Azure VM
+    - name: 🚀 Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
       with:
         host: ${{ secrets.VM_IP }}
@@ -37,7 +38,7 @@ jobs:
         source: "site.zip"
         target: "C:\\temp\\deploy\\site.zip"
 
-    - name: Extract and deploy on IIS
+    - name: 🛠 Extract and deploy to IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -46,15 +47,24 @@ jobs:
         port: 22
         script: |
           powershell -NoProfile -Command "
-            Write-Host '🧼 Cleaning previous files...';
+            Write-Host '🧼 Cleaning old files...';
             Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped' -ErrorAction SilentlyContinue;
             Remove-Item -Recurse -Force 'C:\inetpub\wwwroot\*' -ErrorAction SilentlyContinue;
 
             Write-Host '📦 Extracting ZIP...';
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
 
-            Write-Host '📤 Copying files to wwwroot...';
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
+            Write-Host '📂 Detecting source folder...';
+            $unzipped = 'C:\temp\deploy\unzipped';
+            $deployFolder = Join-Path $unzipped 'deploy_content';
+            if (Test-Path $deployFolder) {
+              $sourcePath = $deployFolder;
+            } else {
+              $sourcePath = $unzipped;
+            }
+
+            Write-Host '📤 Copying to wwwroot...';
+            Copy-Item -Path \"$sourcePath\*\" -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
 
             Write-Host '🗂 Final wwwroot content:';
             Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
