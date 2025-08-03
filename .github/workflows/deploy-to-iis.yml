@@ -10,23 +10,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 📥 Checkout code
+    - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: 📦 Create ZIP of site
-      run: |
-        zip -r deploy.zip . -x ".git/*"
+    - name: Create deploy folder via SSH
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
+        script: |
+          powershell -Command "New-Item -ItemType Directory -Force -Path 'C:\temp\deploy'"
 
-    - name: 📤 SCP ZIP to Windows VM
-      run: |
-        sudo apt-get update && sudo apt-get install -y openssh-client
-        scp -o StrictHostKeyChecking=no -P 22 deploy.zip ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/c/temp/deploy.zip
-      env:
-        VM_USER: ${{ secrets.VM_USER }}
-        VM_IP: ${{ secrets.VM_IP }}
-        VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+    - name: Upload files to Azure VM
+      uses: appleboy/scp-action@v0.1.5
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
+        source: "."
+        target: "/c/temp/deploy"   # 🔁 Use forward slashes (cygwin-style)
 
-    - name: 🚀 Deploy on IIS via SSH
+    - name: Deploy files to IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -35,8 +42,7 @@ jobs:
         port: 22
         script: |
           powershell -Command "
-            Expand-Archive -Path 'C:\temp\deploy.zip' -DestinationPath 'C:\temp\deploy' -Force;
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force;
             Copy-Item -Path 'C:\temp\deploy\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
           "
