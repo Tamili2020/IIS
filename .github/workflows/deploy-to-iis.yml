@@ -18,7 +18,7 @@ jobs:
         mkdir deploy_content
         shopt -s dotglob
         for f in *; do
-          if [[ "$f" != "deploy_content" ]]; then
+          if [[ "$f" != "deploy_content" && "$f" != ".git" && "$f" != "site.zip" ]]; then
             cp -r "$f" deploy_content/
           fi
         done
@@ -45,20 +45,4 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         script: |
-          powershell -NoProfile -Command "
-            Write-Host '🧼 Cleaning previous files...';
-            Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped' -ErrorAction SilentlyContinue;
-            Remove-Item -Recurse -Force 'C:\inetpub\wwwroot\*' -ErrorAction SilentlyContinue;
-
-            Write-Host '📦 Extracting ZIP...';
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
-
-            Write-Host '📤 Copying to wwwroot...';
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
-
-            Write-Host '🗂 Final wwwroot content:';
-            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
-
-            Write-Host '🔁 Restarting IIS...';
-            iisreset
-          "
+          p
