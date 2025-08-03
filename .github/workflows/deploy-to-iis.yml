@@ -22,3 +22,34 @@ jobs:
         cd ..
 
     - name: Upload site.zip to Azure VM
+      uses: appleboy/scp-action@v0.1.5
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
+        source: "site.zip"
+        target: "C:\\temp\\deploy\\site.zip"
+
+    - name: Extract and deploy on IIS
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.VM_IP }}
+        username: ${{ secrets.VM_USER }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: 22
+        script: |
+          powershell -Command "
+            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
+              $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length)
+              $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
+              if ($_.PSIsContainer) {
+                New-Item -ItemType Directory -Force -Path $destination
+              } else {
+                Copy-Item -Path $_.FullName -Destination $destination -Force
+              }
+            };
+            iisreset
+          "
