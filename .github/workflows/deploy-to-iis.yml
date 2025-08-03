@@ -64,7 +64,7 @@ jobs:
             }
 
             Write-Host '📤 Copying to wwwroot...';
-            Copy-Item -Path \"$sourcePath\*\" -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
+            Copy-Item -Path "$sourcePath\*" -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
 
             Write-Host '🗂 Final wwwroot content:';
             Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
