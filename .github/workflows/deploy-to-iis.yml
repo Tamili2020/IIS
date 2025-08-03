@@ -25,7 +25,7 @@ jobs:
         cd deploy_content
         zip -r ../site.zip .
         cd ..
-        unzip -l site.zip  # Debug zip content
+        unzip -l site.zip  # ✅ Debug: List contents of the zip
 
     - name: 🚀 Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
