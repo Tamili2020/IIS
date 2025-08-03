@@ -36,7 +36,7 @@ jobs:
         password: ${{ secrets.VM_PASSWORD }}
         port: 22
         source: "site.zip"
-        target: "C:\\temp\\deploy\\site.zip\\site.zip"
+        target: "C:\\temp\\deploy\\"
 
     - name: 🛠 Extract and deploy to IIS
       uses: appleboy/ssh-action@v0.1.10
@@ -52,7 +52,7 @@ jobs:
             Remove-Item -Recurse -Force 'C:\inetpub\wwwroot\*' -ErrorAction SilentlyContinue;
 
             Write-Host '📦 Extracting ZIP...';
-            Expand-Archive -Path "C:\temp\deploy\site.zip\site.zip" -DestinationPath "C:\temp\deploy\unzipped" -Force;
+            Expand-Archive -Path "C:\temp\deploy\site.zip" -DestinationPath "C:\temp\deploy\unzipped" -Force;
 
             Write-Host '📂 Detecting source folder...';
             $unzipped = 'C:\temp\deploy\unzipped';
