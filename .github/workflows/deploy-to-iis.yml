@@ -16,7 +16,8 @@ jobs:
     - name: Prepare site.zip without nesting
       run: |
         mkdir package
-        cp -r * package/
+        shopt -s extglob
+        cp -r !(package) package/
         cd package
         zip -r ../site.zip .
         cd ..
@@ -42,14 +43,6 @@ jobs:
           powershell -Command "
             Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
             Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse | ForEach-Object {
-              $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length)
-              $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
-              if ($_.PSIsContainer) {
-                New-Item -ItemType Directory -Force -Path $destination
-              } else {
-                Copy-Item -Path $_.FullName -Destination $destination -Force
-              }
-            };
+            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
             iisreset
           "
