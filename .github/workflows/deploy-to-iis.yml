@@ -10,24 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 📥 Checkout source code
+    - name: 📥 Checkout code
       uses: actions/checkout@v3
 
-    - name: 📦 Zip files before transfer
+    - name: 📦 Create ZIP of site
       run: |
         zip -r deploy.zip . -x ".git/*"
 
-    - name: 📤 Upload ZIP to Azure VM
-      uses: appleboy/scp-action@v0.1.5
-      with:
-        host: ${{ secrets.VM_IP }}
-        username: ${{ secrets.VM_USER }}
-        password: ${{ secrets.VM_PASSWORD }}
-        port: 22
-        source: "deploy.zip"
-        target: "C:/temp/deploy.zip"
+    - name: 📤 SCP ZIP to Windows VM
+      run: |
+        sudo apt-get update && sudo apt-get install -y openssh-client
+        scp -o StrictHostKeyChecking=no -P 22 deploy.zip ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/c/temp/deploy.zip
+      env:
+        VM_USER: ${{ secrets.VM_USER }}
+        VM_IP: ${{ secrets.VM_IP }}
+        VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
 
-    - name: 🚀 Deploy to IIS via SSH
+    - name: 🚀 Deploy on IIS via SSH
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
