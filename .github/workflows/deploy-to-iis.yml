@@ -46,30 +46,40 @@ jobs:
         port: 22
         script: |
           powershell -NoProfile -Command "
-            Write-Host '🧼 Cleaning old files...';
-            Remove-Item -Recurse -Force 'C:\temp\deploy\unzipped' -ErrorAction SilentlyContinue;
-            Remove-Item -Recurse -Force 'C:\inetpub\wwwroot\*' -ErrorAction SilentlyContinue;
+            $zipPath = 'C:\temp\deploy\site.zip'
+            $extractPath = 'C:\temp\deploy\unzipped'
+            $wwwroot = 'C:\inetpub\wwwroot'
 
-            Write-Host '📦 Extracting ZIP...';
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
+            Write-Host '🧼 Cleaning old files...'
+            Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force ($wwwroot + '\*') -ErrorAction SilentlyContinue
 
-            Write-Host '📂 Listing extracted files...';
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse;
-
-            Write-Host '📤 Copying files to wwwroot...';
-            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse -File | ForEach-Object {
-              $relativePath = $_.FullName.Substring('C:\temp\deploy\unzipped'.Length).TrimStart('\');
-              $destination = Join-Path 'C:\inetpub\wwwroot' $relativePath
-              $destinationDir = Split-Path $destination
-              if (!(Test-Path $destinationDir)) {
-                New-Item -Path $destinationDir -ItemType Directory -Force | Out-Null
-              }
-              Copy-Item -Path $_.FullName -Destination $destination -Force
+            Write-Host '📁 Checking ZIP existence...'
+            if (-Not (Test-Path $zipPath)) {
+              Write-Error '❌ ZIP file not found at ' + $zipPath
+              exit 1
+            } else {
+              Write-Host '✅ ZIP file found.'
             }
 
-            Write-Host '🗂 Final wwwroot content:';
-            Get-ChildItem -Path 'C:\inetpub\wwwroot\' -Recurse;
+            Write-Host '📦 Extracting ZIP...'
+            try {
+              Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+              Write-Host '✅ Extraction completed.'
+            } catch {
+              Write-Error '❌ Expand-Archive failed: ' + $_.Exception.Message
+              exit 1
+            }
 
-            Write-Host '🔁 Restarting IIS...';
+            Write-Host '📂 Contents of extracted folder:'
+            Get-ChildItem -Path $extractPath -Recurse
+
+            Write-Host '📤 Copying files to wwwroot...'
+            Copy-Item -Path ($extractPath + '\*') -Destination $wwwroot -Recurse -Force
+
+            Write-Host '🗂 Final wwwroot content:'
+            Get-ChildItem -Path $wwwroot -Recurse
+
+            Write-Host '🔁 Restarting IIS...'
             iisreset
           "
