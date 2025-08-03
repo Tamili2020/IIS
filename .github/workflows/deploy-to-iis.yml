@@ -10,13 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Zip only content (no nesting)
+    - name: Zip only files (no nesting)
       run: |
-        echo "📦 Zipping content..."
-        zip -r site.zip . -x "site.zip" ".git/*"
+        zip -r site.zip . -x "site.zip" ".git/*" ".github/*"
 
     - name: Upload site.zip to Azure VM
       uses: appleboy/scp-action@v0.1.5
@@ -28,7 +27,7 @@ jobs:
         source: "site.zip"
         target: "C:/temp/deploy/site.zip"
 
-    - name: Extract and deploy to IIS
+    - name: Extract and deploy on IIS
       uses: appleboy/ssh-action@v0.1.10
       with:
         host: ${{ secrets.VM_IP }}
@@ -37,23 +36,32 @@ jobs:
         port: 22
         script: |
           powershell -NoProfile -Command "
-            Write-Host '🔓 Creating folders if needed...';
-            if (!(Test-Path 'C:\temp\deploy\unzipped')) { New-Item -Path 'C:\temp\deploy\unzipped' -ItemType Directory -Force };
+            Write-Host 'Preparing deployment folders...';
+            if (!(Test-Path 'C:\temp\deploy\unzipped')) {
+              New-Item -Path 'C:\temp\deploy\unzipped' -ItemType Directory
+            }
 
-            Write-Host '📂 Extracting zip...';
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
+            Write-Host 'Extracting site.zip...';
+            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force
 
-            Write-Host '🧹 Cleaning wwwroot...';
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
+            Write-Host 'Listing extracted files for verification:';
+            Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse
 
-            Write-Host '📁 Contents of unzipped directory:';
-            Get-ChildItem -Recurse 'C:\temp\deploy\unzipped';
+            Write-Host 'Clearing wwwroot...';
+            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue
 
-            Write-Host '📤 Copying files to IIS root...';
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
+            Write-Host 'Copying files to wwwroot...';
+            $files = Get-ChildItem -Path 'C:\temp\deploy\unzipped' -Recurse -File
+            foreach ($file in $files) {
+              $relativePath = $file.FullName.Substring('C:\temp\deploy\unzipped'.Length)
+              $targetPath = Join-Path 'C:\inetpub\wwwroot' $relativePath
+              $targetDir = Split-Path $targetPath -Parent
+              if (!(Test-Path $targetDir)) {
+                New-Item -Path $targetDir -ItemType Directory -Force
+              }
+              Copy-Item -Path $file.FullName -Destination $targetPath -Force
+            }
 
-            Write-Host '🔁 Restarting IIS...';
+            Write-Host 'Restarting IIS...';
             iisreset
-
-            Write-Host '✅ Deployment script complete.'
           "
