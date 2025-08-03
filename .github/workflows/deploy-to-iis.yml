@@ -13,30 +13,12 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Zip the website content
-      run: zip -r site.zip .
+    - name: Prepare site.zip without nesting
+      run: |
+        mkdir package
+        cp -r * package/
+        cd package
+        zip -r ../site.zip .
+        cd ..
 
     - name: Upload site.zip to Azure VM
-      uses: appleboy/scp-action@v0.1.5
-      with:
-        host: ${{ secrets.VM_IP }}
-        username: ${{ secrets.VM_USER }}
-        password: ${{ secrets.VM_PASSWORD }}
-        port: 22
-        source: "site.zip"
-        target: "C:\\temp\\deploy\\site.zip"
-
-    - name: Extract and deploy on IIS
-      uses: appleboy/ssh-action@v0.1.10
-      with:
-        host: ${{ secrets.VM_IP }}
-        username: ${{ secrets.VM_USER }}
-        password: ${{ secrets.VM_PASSWORD }}
-        port: 22
-        script: |
-          powershell -Command "
-            Expand-Archive -Path 'C:\temp\deploy\site.zip' -DestinationPath 'C:\temp\deploy\unzipped' -Force;
-            Remove-Item -Path 'C:\inetpub\wwwroot\*' -Recurse -Force -ErrorAction SilentlyContinue;
-            Copy-Item -Path 'C:\temp\deploy\unzipped\*' -Destination 'C:\inetpub\wwwroot\' -Recurse -Force;
-            iisreset
-          "
